@@ -21,12 +21,12 @@
 
 - 以下の理由により、直接 @ffmpeg/ffmpeg を使うのをやめた
   - wasm を扱うアプローチのそれぞれに対して、現状の @ffmpeg/ffmpeg ではうまく対応できない
-    - backend (ServiceWorker) として動かす
+    - background (ServiceWorker) として動かす
     - sandbox 上で動かす
     - (いずれも CSP の設定によって wasm を実行できるような権限をつけておく)
   - `SharedArrayBuffer` を使用している
 
-#### backend 上で動かす際の困りごと
+#### background 上で動かす際の困りごと
 
 - エントリーポイントとしては `@ffmpeg/ffmpeg` になるが、こいつが依存を読み込む際に `URL.createObjectURL` を実行する
   - ServiceWorker 上では使用することができない API
@@ -38,7 +38,7 @@
 - sandbox 環境では CORS の制限を突破できない
   - 動画のバイナリが落とせないため意味がなくなってしまう
   - (諸々の対応によって ffmpeg.wasm を読み込むところまではできた)
-  - (アイデア)もしかしたら downloader.html と同じ仕組みで、backend で各リリースを取得 →sandbox に送信する、で事なきを得られるかも
+  - (アイデア)もしかしたら downloader.html と同じ仕組みで、background で各リリースを取得 →sandbox に送信する、で事なきを得られるかも
 
 #### SharedArrayBuffer
 
@@ -85,3 +85,43 @@ https://twitter.com/\_naari\_/status/1678568667657945090
   - ブラウザ上の wasm のマルチスレッド対応は 通常のページ + wasm + WebWorker の組み合わを前提にしているっぽいが、WebWorker は ServiceWorker から叩けない
 - そもそも wasm 上では外のネットワークに疎通できない
   - なんなら content_script で動くような pure JS なライブラリがありそうだし、もしそれが動くならそっちのほうがいいかも
+
+# この拡張機能の流れ
+
+## 1. API を叩く(オプショナル)
+
+yt-dlp を参考に動画のセッションを作成して `master.m3u8` への URL をつくる / ついでに heartbeat も貼っておく(が、必須ではない)
+
+- React で実装しているが、べつになんでも良いと思う
+
+1. 今いるページにアクセスして API のためのデータを収集 ( `src/lib/fetchInfo.ts fetchApiData()` )
+1. ブラウザ側に露出させて画質の選択肢を与える ( `src/App.tsx` )
+1. 1 で取得した apiData を元に動画を取得するためのセッションを作成する ( `src/lib/fetchInfo.ts fetchInfo()` )
+1. setInterval でハートビートしておく( `src/hooks/useHeartbeat.ts useCurrentPageHeartbeat()` )
+
+## 2. background で `master.m3u8` の中身を収集する
+
+wasm の環境はサンドボックスになっており、fetch などで外部のサーバーに直接問い合わせられないようになっているので、自前で集める
+
+(未検証だけど hls.js とかでうまいことパースできるんだろうな～、もうちょっと楽できそう)
+
+1. ボタンが押されたタイミングで background にメッセージを投げる ( `src/background.ts` )
+1. プレイリストの中身を収集する ( `src/lib/featchHLS.ts fetchMasterPlaylistItems()` など )
+
+## 3. background で `ffmpeg.wasm` を走らせる
+
+本来は `@ffmpeg/ffmpeg` などのラッパーを介して叩かれる低レベル API を直接触る
+
+1. 2 で取得したプレイリストの中身を `core.FS.writeFile()` で ffmpeg.wasm の世界の仮想 FS に設置する (`src/background.ts runFFmpeg()`)
+1. ffmpeg で mp4 に連結する
+1. ffmpeg から動画ファイルを取得する
+
+## 4. ダウンロード用 iframe を介して動画をダウンロード
+
+ServiceWorker からデカい動画をダウンロードしたり、URL 形式の Blob を作成したりすることはできないため迂回策を使用する
+
+1. `downloadBlob()` に色々渡す
+1. `chrome.scripting.executeScript()` でニコニコ動画のページにダウンロード用ページとなる iframe を作成
+1. iframe が作成できたら background に対してメッセージを飛ばしてもらう ( `src/downloader.ts` )
+1. backgorund は iframe からメッセージを受け取ったら、iframe blob 形式の動画ファイルを渡す ( `src/background.ts` )
+1. 受け取った blob から objectURL を作成し、ダウンロード ( `src/downloader.ts` )
