@@ -5,7 +5,7 @@ import { viteStaticCopy } from "vite-plugin-static-copy";
 
 const manifest: ManifestV3Export = {
   manifest_version: 3,
-  name: "CRXJS React Vite Example",
+  name: "nico downloader with @ffmpeg/core-st [Proof of Concept]",
   version: "1.0.0",
   action: { default_popup: "index.html" },
   permissions: ["scripting", "downloads"],
@@ -22,8 +22,8 @@ const manifest: ManifestV3Export = {
     type: "module",
   },
   content_security_policy: {
-    sandbox:
-      "sandbox allow-scripts; script-src 'self' 'unsafe-eval' blob:; script-src-elem 'self' 'unsafe-eval' blob:; worker-src blob:; object-src 'self'; connect-src https://* data: blob: filesystem:;",
+    // sandbox:
+    //   "sandbox allow-scripts; script-src 'self' 'unsafe-eval' blob:; script-src-elem 'self' 'unsafe-eval' blob:; worker-src blob:; object-src 'self'; connect-src https://* data: blob: filesystem:;",
     extension_pages:
       "default-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://unpkg.com/ https://*.dmc.nico/ ws://localhost:5173/",
     // extension_pages:

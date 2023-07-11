@@ -52,30 +52,13 @@ function App() {
       load();
       setInfo(null);
       setHeartbeatInfo(null);
-      // setVideoQuality("");
-      // setAudioQuality("");
-      // const { blob, watchId } = message as CompleteMessage;
-      // const url = URL.createObjectURL(blob);
-      // const a = document.createElement("a");
-      // a.href = url;
-      // a.download = `${watchId}.mp4`;
-      // a.click();
-      // URL.revokeObjectURL(url);
       return true;
     }
     browser.runtime.onMessage.addListener(listener);
     return () => {
       browser.runtime.onMessage.removeListener(listener);
     };
-  }, [
-    setActive,
-    setUrl,
-    setApiData,
-    setInfo,
-    setHeartbeatInfo,
-    // setVideoQuality,
-    // setAudioQuality,
-  ]);
+  }, [setActive, setUrl, setApiData, setInfo, setHeartbeatInfo]);
 
   const handleStart = useCallback(() => {
     const load = async () => {

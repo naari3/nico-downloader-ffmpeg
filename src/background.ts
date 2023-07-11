@@ -234,6 +234,10 @@ browser.runtime.onMessage.addListener(
   }
 );
 
+// 現状、Service Wrokerから直接おおきなファイルをダウンロードすることができない
+// そのため、現在開いてるページに対して、Service Workerからダウンロード用のhtmlをiframeで埋め込み、そこにblobを渡してダウンロードさせる
+// (iframeあたりのpostMessageはchrome.runtime.sendMessageとかと違ってblobをそのまま渡せる)
+// ref: https://stackoverflow.com/a/73350257
 async function downloadBlob(
   blob: Blob,
   name: string,
