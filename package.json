@@ -9,15 +9,22 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ffmpeg/core": "^0.11.0",
+    "@ffmpeg/core-st": "^0.11.1",
+    "@ffmpeg/ffmpeg": "^0.11.6",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "webextension-polyfill": "^0.10.0",
+    "ws": "^8.13.0"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "2.0.0-beta.18",
     "@types/react": "^18.0.24",
     "@types/react-dom": "^18.0.8",
+    "@types/webextension-polyfill": "^0.10.1",
     "@vitejs/plugin-react": "^2.2.0",
     "typescript": "^4.6.4",
-    "vite": "^3.2.3"
+    "vite": "^3.2.3",
+    "vite-plugin-static-copy": "^0.16.0"
   }
 }
