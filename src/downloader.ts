@@ -4,9 +4,8 @@ navigator.serviceWorker.ready.then((swr) =>
   swr.active?.postMessage("sendBlob")
 );
 navigator.serviceWorker.addEventListener("message", async (e) => {
-  console.log("====== message ======");
   if (e.data.blob) {
-    console.log("get blob");
+    console.log("📥 get blob");
     await browser.downloads.download({
       url: URL.createObjectURL(e.data.blob),
       filename: e.data.name,

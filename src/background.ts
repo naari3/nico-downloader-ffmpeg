@@ -1,6 +1,7 @@
 import { createFFmpeg, fetchFile } from "@ffmpeg/ffmpeg";
 import createFFmpegCore from "@ffmpeg/core-st";
 import browser from "webextension-polyfill";
+import { CompleteMessage, Message, URLMessage } from "./types/message";
 
 const parseArgs = (core: any, args: any[]) => {
   const argsPtr = core._malloc(args.length * Uint32Array.BYTES_PER_ELEMENT);
@@ -34,8 +35,7 @@ type PlaylistItem = {
 };
 
 async function fetchPlaylist(url: string, name: string): Promise<PlaylistItem> {
-  console.log("====== fetchPlaylist ======");
-  console.log({ name, url });
+  console.log("📥 fetching...", { name, url });
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
@@ -120,33 +120,38 @@ const makeBaseUrl = (urlStr: string) => {
   return baseUrl.toString();
 };
 
-const parseMasterM3u8 = async (masterUrl: string) => {
-  console.log("====== parseMasterM3u8 ======");
+const parseMasterM3u8 = async (masterUrl: string, masterName: string) => {
   const baseUrl = makeBaseUrl(masterUrl);
-  const playlist = await fetchHLSPlaylist(baseUrl, masterUrl, "master.m3u8");
+  const playlist = await fetchHLSPlaylist(baseUrl, masterUrl, masterName);
   return { playlist, baseUrl };
 };
 
-const runFFmpeg = async (masterPlaylistUrl: string) => {
+const fetchMasterPlaylistItems = async (
+  masterUrl: string,
+  masterName: string
+): Promise<PlaylistItem[]> => {
+  const { playlist } = await parseMasterM3u8(masterUrl, masterName);
+  return flattenPlaylistItems(playlist);
+};
+
+const runFFmpeg = async (playlistItems: PlaylistItem[]) => {
+  const inputFilename = "master.m3u8";
+  const outputFilename = "output.mp4";
   let resolve: ((value: undefined) => void) | null = null;
   const waitEnd = new Promise<undefined>((r) => {
     resolve = r;
   });
   const core = await createFFmpegCore({
-    printErr: (e: any) => console.log(e),
+    printErr: (e: any) => console.warn(`ffmpeg-err: ${e}`),
     print: (e: any) => {
-      console.log(e);
+      console.log(`ffmpeg-out: ${e}`);
       if (e.startsWith("FFMPEG_END")) {
         resolve!(undefined);
       }
     },
   });
-  console.log({ core, masterPlaylistUrl });
-  const { playlist: masterPlaylist, baseUrl } = await parseMasterM3u8(
-    masterPlaylistUrl
-  );
-  const items = flattenPlaylistItems(masterPlaylist);
-  console.log({ items });
+  console.debug({ core });
+  const items = playlistItems;
   const dirs: string[] = [];
   items.forEach((item) => {
     const path = item.name.split("/");
@@ -159,6 +164,7 @@ const runFFmpeg = async (masterPlaylistUrl: string) => {
   });
   const createdDirs: string[] = [];
 
+  console.debug({ dirs });
   dirs.forEach((dir) => {
     const path = dir.split("/");
     let currentPath = "";
@@ -167,6 +173,7 @@ const runFFmpeg = async (masterPlaylistUrl: string) => {
       if (!createdDirs.includes(currentPath)) {
         core.FS.mkdir(currentPath);
         createdDirs.push(currentPath);
+        console.log(`📁 create ${currentPath}`);
       }
     });
   });
@@ -180,65 +187,57 @@ const runFFmpeg = async (masterPlaylistUrl: string) => {
       core.FS.writeFile(item.name, new Uint8Array(item.data as ArrayBuffer));
     }
 
-    console.log(`add ${item.name}`);
+    console.log(`🎞️ add ${item.name}`);
   });
 
   try {
-    ffmpeg(core, ["-i", "master.m3u8", "-c", "copy", "output.mp4"]);
+    ffmpeg(core, ["-i", inputFilename, "-c", "copy", outputFilename]);
   } catch (error) {
     if ((error as any).status !== 0) {
       throw error;
     }
   }
   await waitEnd;
-  const file = core.FS.readFile("output.mp4");
-  console.log({ file });
-  core.FS.unlink("output.mp4");
+  const file = core.FS.readFile(outputFilename);
+  console.debug({ file });
+  core.FS.unlink(outputFilename);
   return file as Uint8Array;
 };
 
-browser.runtime.onMessage.addListener((message) => {
-  console.log({ createFFmpegCore });
-  console.log({ message });
-  const load = async () => {
-    console.log("YO, load");
-    const file = await runFFmpeg(message.url);
-    console.log(file);
-    // const ffmpeg = createFFmpeg({
-    //   log: true,
-    //   // SharedArrayBufferが使えないのでシングルスレッド版を使用する
-    //   //   corePath: "https://unpkg.com/@ffmpeg/core-st@latest",
-    //   // mainName: "main",
-    // });
-    // // 別ファイルのjsをロードするタイミングでURL.createObjectURLが使われているが、ServiceWorkerでは使えない
-    // await ffmpeg.load();
-    // const m3u8 = message.url;
-    // ffmpeg.FS("writeFile", "input.m3u8", await fetchFile(m3u8));
-    // await ffmpeg.run(
-    //   "-i",
-    //   "input.m3u8",
-    //   "-c",
-    //   "copy",
-    //   "-bsf:a",
-    //   "aac_adtstoasc",
-    //   "output.mp4"
-    // );
-    // const data = ffmpeg.FS("readFile", "output.mp4");
-    await downloadBlob(
-      new Blob([file.buffer], { type: "video/mp4" }),
-      "output.mp4",
-      message.origin
-    );
-  };
-  load();
+browser.runtime.onMessage.addListener(
+  (message: URLMessage, sender, sendResponse) => {
+    console.debug({ createFFmpegCore });
+    console.debug({ message });
+    const load = async () => {
+      const playlistItems = await fetchMasterPlaylistItems(
+        message.url,
+        "master.m3u8"
+      );
+      const file = await runFFmpeg(playlistItems);
+      console.debug(file);
+      await downloadBlob(
+        new Blob([file.buffer], { type: "video/mp4" }),
+        `${message.watchId}.mp4`
+      );
+      const completeMessage: CompleteMessage = {
+        type: "complete",
+        watchId: message.watchId,
+        // blob: new Blob([file.buffer], { type: "video/mp4" }),
+      };
 
-  return true;
-});
+      await browser.tabs.sendMessage(sender.tab?.id!, completeMessage);
+      // await browser.runtime.sendMessage(completeMessage);
+    };
+    load();
+
+    return true;
+  }
+);
 
 async function downloadBlob(
   blob: Blob,
   name: string,
-  origin: string,
+  origin?: string,
   destroyBlob = true
 ) {
   // When `destroyBlob` parameter is true, the blob is transferred instantly,
@@ -256,12 +255,12 @@ async function downloadBlob(
     WAR?.some((r) => (r as any).resources?.includes("downloader.html")) &&
     (await browser.tabs.query({ url: "*://*/*" })).find((t) => t.url);
   if (tab) {
-    console.log({ tab });
+    console.debug({ tab });
     const downloaderUrl = browser.runtime.getURL("downloader.html");
     const result = await browser.scripting.executeScript({
       target: { tabId: tab.id! },
       func: (url) => {
-        console.log("howdy");
+        console.log("👋 howdy");
         const iframe = document.createElement("iframe");
         iframe.src = url;
         iframe.style.cssText = "display:none!important";
@@ -269,22 +268,22 @@ async function downloadBlob(
       },
       args: [downloaderUrl],
     });
-    console.log({ result });
-    console.log("YO");
+    console.debug({ result });
+    console.debug("YO");
   } else {
     await browser.windows.create({
       url: "downloader.html",
       state: "minimized",
     });
   }
-  console.log("waiting for message");
+  console.log("⏳ waiting for message");
   self.addEventListener("message", function onMsg(e) {
     if (e.data === "sendBlob") {
-      console.log("sending blob, close listener");
+      console.log("📨 sending blob, close listener");
       self.removeEventListener("message", onMsg);
       if (!e.source) return;
       send(e.source, !tab);
-      console.log("completed!");
+      console.log("✅ completed!");
     }
     return true;
   });

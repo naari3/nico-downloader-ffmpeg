@@ -29,6 +29,6 @@ window.addEventListener("message", (event) => {
     );
     window.postMessage({ url }, "*");
   };
-  console.log({ event });
+  console.debug({ event });
   load();
 });
