@@ -1,15 +1,7 @@
 import { useEffect, useRef } from "react";
 import { fetchInfo } from "../lib/fetchInfo";
 
-function useHeartbeatClock({
-  info,
-  heartbeatInfo,
-  active,
-}: {
-  info: any;
-  heartbeatInfo: any;
-  active: boolean;
-}) {
+function useHeartbeatClock({ info, heartbeatInfo, active }: { info: any; heartbeatInfo: any; active: boolean }) {
   const savedCallback = useRef<() => void>();
   useEffect(() => {
     if (!info || !heartbeatInfo) {
@@ -44,15 +36,7 @@ function useHeartbeatClock({
   }, [active, info, heartbeatInfo]);
 }
 
-function useCurrentPageHeartbeat({
-  active,
-  info,
-  heartbeatInfo,
-}: {
-  active: boolean;
-  info: any;
-  heartbeatInfo: any;
-}) {
+function useCurrentPageHeartbeat({ active, info, heartbeatInfo }: { active: boolean; info: any; heartbeatInfo: any }) {
   useEffect(() => {
     const load = async () => {
       console.debug({ info, heartbeatInfo });

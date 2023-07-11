@@ -18,11 +18,7 @@ const fetchApiData = async () => {
   return apiData;
 };
 
-const fetchInfo = async (params?: {
-  apiData?: any;
-  audio_src_id?: string;
-  video_src_id?: string;
-}) => {
+const fetchInfo = async (params?: { apiData?: any; audio_src_id?: string; video_src_id?: string }) => {
   const apiData = params?.apiData ?? (await fetchApiData());
   console.debug({ apiData });
   const sessionApiData = apiData.media.delivery.movie.session;
@@ -49,70 +45,63 @@ const fetchInfo = async (params?: {
       },
     };
   }
-  const sessionResponse = await fetch(
-    `${sessionApiEndpoint.url}?_format=json`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        session: {
-          client_info: {
-            player_id: sessionApiData.playerId,
-          },
-          content_auth: {
-            auth_type: sessionApiData.authTypes[sessionApiData.protocols[0]],
-            content_key_timeout: sessionApiData.contentKeyTimeout,
-            service_id: "nicovideo",
-            service_user_id: sessionApiData.serviceUserId,
-          },
-          content_id: sessionApiData.contentId,
-          content_src_id_sets: [
-            {
-              content_src_ids: [
-                {
-                  src_id_to_mux: {
-                    audio_src_ids: params?.audio_src_id
-                      ? [params.audio_src_id]
-                      : [sessionApiData.audios[0]],
-                    video_src_ids: params?.video_src_id
-                      ? [params.video_src_id]
-                      : [sessionApiData.videos[0]],
-                  },
-                },
-              ],
-            },
-          ],
-          content_type: "movie",
-          content_uri: "",
-          keep_method: {
-            heartbeat: {
-              lifetime: sessionApiData.heartbeatLifetime,
-            },
-          },
-          priority: sessionApiData.priority,
-          protocol: {
-            name: "http",
-            parameters: {
-              http_parameters: {
-                parameters: prococolParameters,
-              },
-            },
-          },
-          recipe_id: sessionApiData.recipeId,
-          session_operation_auth: {
-            session_operation_auth_by_signature: {
-              signature: sessionApiData.signature,
-              token: sessionApiData.token,
-            },
-          },
-          timing_constraint: "unlimited",
+  const sessionResponse = await fetch(`${sessionApiEndpoint.url}?_format=json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      session: {
+        client_info: {
+          player_id: sessionApiData.playerId,
         },
-      }),
-      credentials: "include",
-    }
-  );
+        content_auth: {
+          auth_type: sessionApiData.authTypes[sessionApiData.protocols[0]],
+          content_key_timeout: sessionApiData.contentKeyTimeout,
+          service_id: "nicovideo",
+          service_user_id: sessionApiData.serviceUserId,
+        },
+        content_id: sessionApiData.contentId,
+        content_src_id_sets: [
+          {
+            content_src_ids: [
+              {
+                src_id_to_mux: {
+                  audio_src_ids: params?.audio_src_id ? [params.audio_src_id] : [sessionApiData.audios[0]],
+                  video_src_ids: params?.video_src_id ? [params.video_src_id] : [sessionApiData.videos[0]],
+                },
+              },
+            ],
+          },
+        ],
+        content_type: "movie",
+        content_uri: "",
+        keep_method: {
+          heartbeat: {
+            lifetime: sessionApiData.heartbeatLifetime,
+          },
+        },
+        priority: sessionApiData.priority,
+        protocol: {
+          name: "http",
+          parameters: {
+            http_parameters: {
+              parameters: prococolParameters,
+            },
+          },
+        },
+        recipe_id: sessionApiData.recipeId,
+        session_operation_auth: {
+          session_operation_auth_by_signature: {
+            signature: sessionApiData.signature,
+            token: sessionApiData.token,
+          },
+        },
+        timing_constraint: "unlimited",
+      },
+    }),
+    credentials: "include",
+  });
   const sessionData = await sessionResponse.json();
   const url = sessionData.data.session.content_uri;
 

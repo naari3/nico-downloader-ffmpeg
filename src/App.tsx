@@ -77,10 +77,7 @@ function App() {
 
   return (
     <>
-      <select
-        value={videoQuality}
-        onChange={(e) => setVideoQuality(e.target.value)}
-      >
+      <select value={videoQuality} onChange={(e) => setVideoQuality(e.target.value)}>
         {apiData
           ? apiData.media.delivery.movie.session.videos.map((qlt: any) => (
               <option key={qlt} value={qlt}>
@@ -89,10 +86,7 @@ function App() {
             ))
           : null}
       </select>
-      <select
-        value={audioQuality}
-        onChange={(e) => setAudioQuality(e.target.value)}
-      >
+      <select value={audioQuality} onChange={(e) => setAudioQuality(e.target.value)}>
         {apiData
           ? apiData.media.delivery.movie.session.audios.map((qlt: any) => (
               <option key={qlt} value={qlt}>

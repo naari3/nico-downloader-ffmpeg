@@ -1,8 +1,6 @@
 import browser from "webextension-polyfill";
 
-navigator.serviceWorker.ready.then((swr) =>
-  swr.active?.postMessage("sendBlob")
-);
+navigator.serviceWorker.ready.then((swr) => swr.active?.postMessage("sendBlob"));
 navigator.serviceWorker.addEventListener("message", async (e) => {
   if (e.data.blob) {
     console.log("📥 get blob");

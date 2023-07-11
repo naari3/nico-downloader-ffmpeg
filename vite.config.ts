@@ -24,8 +24,7 @@ const manifest: ManifestV3Export = {
   content_security_policy: {
     // sandbox:
     //   "sandbox allow-scripts; script-src 'self' 'unsafe-eval' blob:; script-src-elem 'self' 'unsafe-eval' blob:; worker-src blob:; object-src 'self'; connect-src https://* data: blob: filesystem:;",
-    extension_pages:
-      "default-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://unpkg.com/ https://*.dmc.nico/ ws://localhost:5173/",
+    extension_pages: "default-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://unpkg.com/ https://*.dmc.nico/ ws://localhost:5173/",
     // extension_pages:
     //   "sandbox allow-scripts; script-src 'self' 'unsafe-eval' blob:; script-src-elem 'self' 'unsafe-eval' blob:; worker-src blob:; object-src 'self'",
   },

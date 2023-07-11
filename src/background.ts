@@ -1,7 +1,7 @@
-import { createFFmpeg, fetchFile } from "@ffmpeg/ffmpeg";
 import createFFmpegCore from "@ffmpeg/core-st";
 import browser from "webextension-polyfill";
 import { CompleteMessage, Message, URLMessage } from "./types/message";
+import { PlaylistItem, fetchMasterPlaylistItems } from "./lib/fetchHLS";
 
 const parseArgs = (core: any, args: any[]) => {
   const argsPtr = core._malloc(args.length * Uint32Array.BYTES_PER_ELEMENT);
@@ -14,126 +14,37 @@ const parseArgs = (core: any, args: any[]) => {
 };
 
 const ffmpeg = (core: any, args: any[]) => {
-  core.ccall(
-    "main",
-    "number",
-    ["number", "number"],
-    parseArgs(core, [
-      "ffmpeg",
-      "-nostdin",
-      "-allowed_extensions",
-      "ALL",
-      ...args,
-    ])
-  );
-};
-type PlaylistItem = {
-  type: "m3u8" | "ts";
-  data: string | ArrayBuffer;
-  name: string;
-  items?: { [key: string]: PlaylistItem };
+  core.ccall("main", "number", ["number", "number"], parseArgs(core, ["ffmpeg", "-nostdin", "-allowed_extensions", "ALL", ...args]));
 };
 
-async function fetchPlaylist(url: string, name: string): Promise<PlaylistItem> {
-  console.log("📥 fetching...", { name, url });
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
+// core.FSで各ファイルが配置されるディレクトリを用意しておく必要があるので、mkdirに渡すためのディレクトリ名一覧をつくる
+// 例:
+//   入力: ["a/b/c", "a/b/d", "a/e"]
+//   出力: ["a/", "a/b/", "a/b/c/", "a/b/d/", "a/e/"]
+const makeUniqueDirectories = (items: PlaylistItem[]) => {
+  const dirs = new Set<string>();
+  const createdDirs = new Set<string>();
 
-  const contentType = response.headers.get("content-type");
+  items.forEach((item) => {
+    const path = item.name.split("/");
+    path.pop();
+    if (path.length > 0) dirs.add(path.join("/"));
+  });
 
-  if (contentType?.includes("application/vnd.apple.mpegurl")) {
-    const data = await response.text();
-    return { type: "m3u8", data, name };
-  } else if (contentType?.includes("video/MP2T")) {
-    const data = await response.arrayBuffer();
-    return { type: "ts", data, name };
-  } else {
-    throw new Error(`Unexpected content-type! type: ${contentType}`);
-  }
-}
+  dirs.forEach((dir) => {
+    const path = dir.split("/");
+    path.reduce((currentPath, p) => {
+      const newPath = currentPath + p + "/";
+      createdDirs.add(newPath);
+      return newPath;
+    }, "");
+  });
 
-async function fetchHLSPlaylist(
-  baseUrl: string,
-  playlistUrl: string,
-  name: string
-): Promise<PlaylistItem> {
-  let playlist: PlaylistItem = {
-    type: "m3u8",
-    data: "",
-    items: {},
-    name: name ?? playlistUrl,
-  };
-
-  const result = await fetchPlaylist(playlistUrl, name ?? playlistUrl);
-  if (result.type === "m3u8") {
-    const lines = (result.data as string).split("\n");
-    playlist.type = result.type;
-    playlist.data = result.data;
-
-    for (let line of lines) {
-      line = line.trim();
-      if (!line.startsWith("#") && line.length > 0) {
-        const itemUrl = new URL(line, baseUrl);
-        let childName: string;
-        if (itemUrl.href.includes(".ts")) {
-          const pathArray = name.split("/");
-          pathArray.pop();
-          pathArray.push(line);
-          childName = pathArray.join("/");
-        } else {
-          childName = line;
-        }
-        playlist.items![itemUrl.href] = await fetchHLSPlaylist(
-          makeBaseUrl(itemUrl.href),
-          itemUrl.href,
-          childName
-        );
-      }
-    }
-  } else if (result.type === "ts") {
-    return result;
-  }
-
-  return playlist;
-}
-
-function flattenPlaylistItems(item: PlaylistItem): PlaylistItem[] {
-  let flatArray: PlaylistItem[] = [item];
-
-  if (item.items) {
-    for (const key in item.items) {
-      flatArray = [...flatArray, ...flattenPlaylistItems(item.items[key])];
-    }
-  }
-
-  return flatArray;
-}
-
-const makeBaseUrl = (urlStr: string) => {
-  const url = new URL(urlStr);
-  const path = url.pathname.split("/");
-  path.pop();
-  const dir = path.join("/");
-  const baseUrl = new URL(dir + "/", url.origin);
-  return baseUrl.toString();
+  return Array.from(createdDirs);
 };
 
-const parseMasterM3u8 = async (masterUrl: string, masterName: string) => {
-  const baseUrl = makeBaseUrl(masterUrl);
-  const playlist = await fetchHLSPlaylist(baseUrl, masterUrl, masterName);
-  return { playlist, baseUrl };
-};
-
-const fetchMasterPlaylistItems = async (
-  masterUrl: string,
-  masterName: string
-): Promise<PlaylistItem[]> => {
-  const { playlist } = await parseMasterM3u8(masterUrl, masterName);
-  return flattenPlaylistItems(playlist);
-};
-
+// @ffmpeg/ffmpeg より低レイヤーなAPIを直接触っている
+// ref: https://github.com/ffmpegwasm/ffmpeg.wasm-core/blob/1f3461d4162ea41dd714c5cae7fff08fda362ad8/wasm/examples/browser/js/utils.js#L23
 const runFFmpeg = async (playlistItems: PlaylistItem[]) => {
   const inputFilename = "master.m3u8";
   const outputFilename = "output.mp4";
@@ -152,37 +63,13 @@ const runFFmpeg = async (playlistItems: PlaylistItem[]) => {
   });
   console.debug({ core });
   const items = playlistItems;
-  const dirs: string[] = [];
-  items.forEach((item) => {
-    const path = item.name.split("/");
-    path.pop();
-    if (path.length === 0) return;
-    const dir = path.join("/");
-    if (!dirs.includes(dir)) {
-      dirs.push(dir);
-    }
-  });
-  const createdDirs: string[] = [];
-
-  console.debug({ dirs });
-  dirs.forEach((dir) => {
-    const path = dir.split("/");
-    let currentPath = "";
-    path.forEach((p) => {
-      currentPath += p + "/";
-      if (!createdDirs.includes(currentPath)) {
-        core.FS.mkdir(currentPath);
-        createdDirs.push(currentPath);
-        console.log(`📁 create ${currentPath}`);
-      }
-    });
+  makeUniqueDirectories(items).forEach((dir) => {
+    core.FS.mkdir(dir);
+    console.log(`📁 create ${dir}`);
   });
   items.forEach((item) => {
     if (item.type === "m3u8") {
-      core.FS.writeFile(
-        item.name,
-        new TextEncoder().encode(item.data as string)
-      );
+      core.FS.writeFile(item.name, new TextEncoder().encode(item.data as string));
     } else if (item.type === "ts") {
       core.FS.writeFile(item.name, new Uint8Array(item.data as ArrayBuffer));
     }
@@ -204,46 +91,33 @@ const runFFmpeg = async (playlistItems: PlaylistItem[]) => {
   return file as Uint8Array;
 };
 
-browser.runtime.onMessage.addListener(
-  (message: URLMessage, sender, sendResponse) => {
-    console.debug({ createFFmpegCore });
-    console.debug({ message });
-    const load = async () => {
-      const playlistItems = await fetchMasterPlaylistItems(
-        message.url,
-        "master.m3u8"
-      );
-      const file = await runFFmpeg(playlistItems);
-      console.debug(file);
-      await downloadBlob(
-        new Blob([file.buffer], { type: "video/mp4" }),
-        `${message.watchId}.mp4`
-      );
-      const completeMessage: CompleteMessage = {
-        type: "complete",
-        watchId: message.watchId,
-        // blob: new Blob([file.buffer], { type: "video/mp4" }),
-      };
-
-      await browser.tabs.sendMessage(sender.tab?.id!, completeMessage);
-      // await browser.runtime.sendMessage(completeMessage);
+browser.runtime.onMessage.addListener((message: URLMessage, sender, sendResponse) => {
+  console.debug({ createFFmpegCore });
+  console.debug({ message });
+  const load = async () => {
+    const playlistItems = await fetchMasterPlaylistItems(message.url, "master.m3u8");
+    const file = await runFFmpeg(playlistItems);
+    console.debug(file);
+    await downloadBlob(new Blob([file.buffer], { type: "video/mp4" }), `${message.watchId}.mp4`);
+    const completeMessage: CompleteMessage = {
+      type: "complete",
+      watchId: message.watchId,
+      // blob: new Blob([file.buffer], { type: "video/mp4" }),
     };
-    load();
 
-    return true;
-  }
-);
+    await browser.tabs.sendMessage(sender.tab?.id!, completeMessage);
+    // await browser.runtime.sendMessage(completeMessage);
+  };
+  load();
+
+  return true;
+});
 
 // 現状、Service Wrokerから直接おおきなファイルをダウンロードすることができない
 // そのため、現在開いてるページに対して、Service Workerからダウンロード用のhtmlをiframeで埋め込み、そこにblobを渡してダウンロードさせる
 // (iframeあたりのpostMessageはchrome.runtime.sendMessageとかと違ってblobをそのまま渡せる)
 // ref: https://stackoverflow.com/a/73350257
-async function downloadBlob(
-  blob: Blob,
-  name: string,
-  origin?: string,
-  destroyBlob = true
-) {
+async function downloadBlob(blob: Blob, name: string, origin?: string, destroyBlob = true) {
   // When `destroyBlob` parameter is true, the blob is transferred instantly,
   // but it's unusable in SW afterwards, which is fine as we made it only to download
   const send = async (dst: MessageEventSource, close: boolean) => {
@@ -256,8 +130,7 @@ async function downloadBlob(
   };
   const WAR = browser.runtime.getManifest().web_accessible_resources;
   const tab =
-    WAR?.some((r) => (r as any).resources?.includes("downloader.html")) &&
-    (await browser.tabs.query({ url: "*://*/*" })).find((t) => t.url);
+    WAR?.some((r) => (r as any).resources?.includes("downloader.html")) && (await browser.tabs.query({ url: "*://*/*" })).find((t) => t.url);
   if (tab) {
     console.debug({ tab });
     const downloaderUrl = browser.runtime.getURL("downloader.html");
